@@ -81,11 +81,11 @@ class Scheduler {
     this.configPath = configPath || defaultPath;
   }
   async init() {
-    let config = await this.read();
-    if (config.schedules) {
-      console.log(`${new Date().toISOString()}\t`, `Initial schedule from ${this.configPath}`)
-      await this.update(config.schedules)
-    }
+    // let config = await this.read();
+    // if (config.schedules) {
+    //   console.log(`${new Date().toISOString()}\t`, `Initial schedule from ${this.configPath}`)
+    //   await this.update(config.schedules)
+    // }
   }
   get() {
     let schedules = Object.keys(schedule.scheduledJobs).map(name => {
@@ -137,7 +137,7 @@ class Scheduler {
       await this.delete();
       await this.create(configs);
       let result = await this.get();
-      await this.write(result);
+      // await this.write(result);
       return Promise.resolve(result);
     }
     catch (error) {
@@ -152,7 +152,7 @@ class Scheduler {
       await this.delete();
       await this.create(configs);
       let result = await this.get();
-      await this.write(result);
+      // await this.write(result);
       return Promise.resolve(result);
     }
     else {

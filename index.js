@@ -10,25 +10,25 @@ app.use(cors());
 app.use('/schedule', router)
 router.use(bodyParser.json());
 
-const port = 8000;
+const port = require('./config').port;
 
 let scheduler = new Scheduler();
 scheduler.init();
 
-router.get('/', async (req, res) => {
+router.get('/all', async (req, res) => {
   await scheduler.get()
     .then(result => res.status(200).send(result))
     .catch(err => res.status(500).send(err))
 });
 
-router.post('/', async (req, res) => {
+router.post('/all', async (req, res) => {
   let body = req.body;
   await scheduler.update(body.schedules)
     .then(result => res.status(200).send(result))
     .catch(err => res.status(500).send(err))
 });
 
-router.delete('/', async (req, res) => {
+router.delete('/all', async (req, res) => {
   await scheduler.delete()
     .then(result => res.status(200).send(result))
     .catch(err => res.status(500).send(err))
