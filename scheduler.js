@@ -1,12 +1,12 @@
-const Validator = require('./validator')
+const { Validator, isValid } = require('./validator')
 const CronManager = require('./cronManager')
-const configPath = require('./config').configPath;
-// const { logWithTime, errorWithTime } = require('./logger')
+const configPath = require('./config').configPath || 'schedule-config.json';
+
 const schedule = require('node-schedule')
 const axios = require('axios')
 const fs = require('fs')
 
-let example_url = "http://localhost:3000/campaign/health"
+let example_url = "https://api-internal-dev.eztable.com/campaign/health"
 let example_config = {
   schedules: [
     {
@@ -72,21 +72,54 @@ let example_config = {
   ]
 }
 
-class Scheduler {
-  constructor() {
-    let defaultPath = 'schedule_config.json'
-    if (!this.configPath) {
-      console.error(`${new Date().toISOString()}\t`, `Config path is undefined, set configPath to ${defaultPath}`)
+/** reference: https://gist.github.com/gordonbrander/2230317 */
+const uniqueId = () => {
+  return (Date.now().toString(36) + Math.random().toString(36).substr(2, 5)).toUpperCase()
+  // return '_' + Math.random().toString(36).substr(2, 9);
+}
+
+class Scheduler { 
+
+  constructor(path){
+    this._configPath = path || configPath;
+  }
+
+  get configPath(){ return this._configPath; }
+  set configPath(path){ this._configPath = path; }
+
+  async reboot() {
+    const json = await this._read(this._configPath);
+    await this.update(json.schedules);
+  }
+  async update(schedules) {
+    if (!isValid(schedules)) throw new Error(`config is not valid`)
+
+    await this._write(this._configPath, { schedules })
+
+    for (let jobName in schedule.scheduledJobs) {
+      schedule.scheduledJobs[jobName].cancel()
     }
-    this.configPath = configPath || defaultPath;
+
+    schedules.forEach(config => {
+      // let now = new Date().valueOf().toString()
+      let id = uniqueId()
+      schedule.scheduleJob(id, config.cron, async () => {
+        await axios.get(config.url)
+          .then(res => {
+            if (res.status !== 200)
+              throw new Error(`response status is ${res.status}`)
+          })
+          .catch(error => {
+            console.error(error)
+          });
+      });
+      schedule.scheduledJobs[id].cron = config.cron;
+      schedule.scheduledJobs[id].url = config.url;
+    })
+
+    console.log(`${new Date().toISOString()}\tRunning:`, await this.get())
   }
-  async init() {
-    // let config = await this.read();
-    // if (config.schedules) {
-    //   console.log(`${new Date().toISOString()}\t`, `Initial schedule from ${this.configPath}`)
-    //   await this.update(config.schedules)
-    // }
-  }
+
   get() {
     let schedules = Object.keys(schedule.scheduledJobs).map(name => {
       return {
@@ -96,103 +129,41 @@ class Scheduler {
     })
     return Promise.resolve({ schedules })
   }
-  async delete() {
-    console.log(`${new Date().toISOString()}\t`, 'ScheduledJobs snpashot (before delete):', await this.get())
-    for (let jobName in schedule.scheduledJobs) {
-      eval(`schedule.scheduledJobs.${jobName}.cancel()`);
-    }
-    let result = await this.get();
-    await this.write(result);
-    return Promise.resolve(result);
-  }
-  async create(configs) {
-    for (let i = 0; i < configs.length; i++) {
-      let jobName = `JOB_${i}`
-      schedule.scheduleJob(jobName, configs[i].cron, async () => {
-        if (configs[i].url !== "") {
-          console.log(`${new Date().toISOString()}\t`, `Fire to ${configs[i].url} for ${configs[i].cron}`)
 
-          await axios.get(configs[i].url)
-            .then(response => {
-              console.log(`${new Date().toISOString()}\t`, `Response: ${JSON.stringify({ status: response.status, ...response.data })}`)
-            })
-            .catch(error => {
-              console.error(`${new Date().toISOString()}\t`, `Request fail for ${error.message}`)
-            })
-        }
-        else {
-          console.log(`${new Date().toISOString()}\t`, `Unfire because url is empty`)
-        }
-      })
-      schedule.scheduledJobs[jobName].cron = configs[i].cron
-      schedule.scheduledJobs[jobName].url = configs[i].url
-    }
-    console.log(`${new Date().toISOString()}\t`, 'ScheduledJobs snpashot (after create):', await this.get())
+  // async merge(schedules) {
+  //   if (schedules && Array.isArray(schedules)) {
+  //     let cronManager = new CronManager();
+  //     let configs = await cronManager.mergeCrons(schedules)
+  //     await this.delete();
+  //     await this.create(configs);
+  //     let result = await this.get();
+  //     // await this._write(result);
+  //     return Promise.resolve(result);
+  //   }
+  //   else {
+  //     console.log(`${new Date().toISOString()}\t`, 'Merge Fail: schedules is invalid')
+  //   }
+  // }
+
+  async _read(path) {
+
+    if (!fs.existsSync(path)) 
+      throw new Error('Schedule config not found');
+
+    let data = await fs.readFileSync(path, 'utf8');
+
+    let jsonObj = JSON.parse(data);
+
+    return jsonObj;
+
   }
-  async update(schedules) {
-    try {
-      // console.log(`${new Date().toISOString()}\t`, 'Schedule (before validate)', schedules)
-      let configs = Validator.validateConfig(schedules);
-      // console.log(`${new Date().toISOString()}\t`, 'Schedule (after validate)', configs)
-      await this.delete();
-      await this.create(configs);
-      let result = await this.get();
-      // await this.write(result);
-      return Promise.resolve(result);
-    }
-    catch (error) {
-      console.error(`${new Date().toISOString()}\t`, 'Update fail for', error)
-      return Promise.reject(`Fail for error ${error}`)
-    }
-  }
-  async merge(schedules) {
-    if (schedules && Array.isArray(schedules)) {
-      let cronManager = new CronManager();
-      let configs = await cronManager.mergeCrons(schedules)
-      await this.delete();
-      await this.create(configs);
-      let result = await this.get();
-      // await this.write(result);
-      return Promise.resolve(result);
-    }
-    else {
-      console.log(`${new Date().toISOString()}\t`, 'Merge Fail: schedules is invalid')
-    }
-  }
-  async read() {
-    return new Promise((resolve, reject) => {
-      if (fs.existsSync(this.configPath)) {
-        console.log(`${new Date().toISOString()}\t`, `Read schedule config from ${this.configPath}`)
-        fs.readFile(this.configPath, 'utf8', (err, data) => {
-          if (err) {
-            console.error(`${new Date().toISOString()}\t`, err)
-            resolve({})
-          }
-          else {
-            if (Validator.isJsonStr(data)) {
-              resolve(JSON.parse(data))
-            }
-            else {
-              console.log(`${new Date().toISOString()}\t`, `Schedule config from ${this.configPath} is not JSON-formate`)
-              resolve({})
-            }
-          }
-        });
-      }
-      else {
-        console.error(`${new Date().toISOString()}\t`, `Schedule config is not existed`)
-        resolve({})
-      }
-    });
-  }
-  async write(config) {
+
+  async _write(path, config) {
+
     const output = JSON.stringify(config);
-    return new Promise((resolve, reject) => {
-      fs.writeFile(this.configPath, output, 'utf8', function (err) {
-        if (err) reject(err);
-        else resolve("The file of schedule_config is updated!");
-      });
-    });
+    
+    await fs.writeFileSync(path, output, 'utf8');
+
   }
 
 }

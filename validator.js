@@ -2,7 +2,31 @@ const cron = require('cron-validator');
 const validUrl = require('valid-url');
 const moment = require('moment')
 
+const isCron = (expression) => {
+  return cron.isValidCron(expression, { seconds: true, allowBlankDay: true })
+}
+const isIsoDate = (date) => {
+  return moment(date, moment.ISO_8601).isValid()
+}
+const isValid = (scheduleleConfigs) => {
+  for (let config of scheduleleConfigs) {
+    if (typeof (config.cron) !== 'string') return false;
+    if ((!isCron(config.cron)) && (!isIsoDate(config.cron))) return false;
+    if (typeof (config.url) !== 'string') return false;
+    if (!validUrl.isUri(config.url)) return false;
+  }
+  return true;
+}
 class Validator {
+  static validate(scheduleleConfigs) {
+    for (let config of scheduleleConfigs) {
+      if (typeof (config.cron) !== 'string') return false
+      if ((!isCron(config.cron)) && (!isIsoDate(config.cron))) return false;
+      if (typeof (config.url) !== 'string') return false
+      if (!validUrl.isUri(config.url)) return false
+    }
+    return true;
+  }
   static validateConfig(scheduleConfigs) {
     scheduleConfigs = Validator._navigateAry('schedules', scheduleConfigs, (config) => {
       config.cron = Validator._cron('schedule.cron', config.cron)
@@ -52,4 +76,7 @@ class Validator {
   }
 }
 
-module.exports = Validator
+module.exports = {
+  Validator,
+  isValid
+}
