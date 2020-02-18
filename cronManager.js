@@ -1,4 +1,4 @@
-const Validator = require('./validator')
+const { isCron, isIsoDate } = require('./validator')
 // const { logWithTime, errorWithTime } = require('./logger')
 const moment = require('moment-timezone')
 
@@ -31,12 +31,12 @@ class CronManager {
       isodt: []
     }
     crons.forEach( src => {
-      if (Validator.isCron(src)) {
+      if (isCron(src)) {
         if (!(distinctCrons.cron.includes(src))) {
           distinctCrons.cron.push(src)
         }
       }
-      if (Validator.isIsoDate(src)) {
+      if (isIsoDate(src)) {
         let found = 0;
         for (let date of distinctCrons.isodt) {
           if (moment(src).isSame(date)) {

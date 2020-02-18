@@ -78,5 +78,7 @@ class Validator {
 
 module.exports = {
   Validator,
-  isValid
+  isValid,
+  isCron,
+  isIsoDate
 }
