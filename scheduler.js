@@ -1,6 +1,6 @@
 const { Validator, isValid } = require('./validator')
 const CronManager = require('./cronManager')
-const configPath = require('./config').configPath || 'schedule-config.json';
+const configPath = require('./config').configPath || './schedule-config.json';
 
 const schedule = require('node-schedule')
 const axios = require('axios')
@@ -10,27 +10,7 @@ let example_url = "https://api-internal-dev.eztable.com/campaign/health"
 let example_config = {
   schedules: [
     {
-      cron: "0 */2 * ? * *",
-      url: example_url
-    },
-    {
-      cron: "0 0 * ? * *",
-      url: example_url
-    },
-    {
-      cron: "0 0 6 * * ?",
-      url: example_url
-    },
-    {
-      cron: "0 0 6 * * ?",
-      url: example_url
-    },
-    {
-      cron: "0 0 6 * * ?",
-      url: example_url
-    },
-    {
-      cron: "*/10 * * * * ?",
+      cron: "0 * * ? * *",
       url: example_url
     },
     {
@@ -40,44 +20,21 @@ let example_config = {
     {
       cron: "2020-02-29T23:59:59.000+08:00",
       url: example_url
-    },
-    {
-      cron: "2020-02-29T15:59:59Z",
-      url: example_url
-    },
-    {
-      cron: "2020-02-29T10:59:59T-05:00",
-      url: example_url
-    },
-    {
-      cron: "2020-02-29T23:59:59.000+08:00",
-      url: example_url
-    },
-    {
-      cron: "2020-02-29T23:59:59Z",
-      url: example_url
-    },
-    {
-      cron: "2020-02-29T23:59:59.000Z",
-      url: example_url
-    },
-    {
-      cron: "2020-02-29T23:59:59Z",
-      url: example_url
-    },
-    {
-      cron: "2020-02-29T23:59:59.000Z",
-      url: example_url
-    },
+    }
   ]
 }
 
 /** reference: https://gist.github.com/gordonbrander/2230317 */
-const uniqueId = () => {
-  return (Date.now().toString(36) + Math.random().toString(36).substr(2, 5)).toUpperCase()
-  // return '_' + Math.random().toString(36).substr(2, 9);
+const generateUuid = () => {
+  return ( Math.random().toString(36).substr(2, 5) + Date.now().toString(36) + Math.random().toString(36).substr(2, 5) ).toUpperCase()
 }
-
+const uniqueId = (origins = []) => {
+  let uuid = generateUuid();
+  while ( origins.includes(uuid) ){
+    uuid = generateUuid();
+  }
+  return uuid;
+}
 class Scheduler { 
 
   constructor(path){
@@ -101,8 +58,8 @@ class Scheduler {
     }
 
     schedules.forEach(config => {
-      // let now = new Date().valueOf().toString()
-      let id = uniqueId()
+      let id = uniqueId(Object.keys(schedule.scheduledJobs));
+      
       schedule.scheduleJob(id, config.cron, async () => {
         await axios.get(config.url)
           .then(res => {
@@ -123,32 +80,19 @@ class Scheduler {
   get() {
     let schedules = Object.keys(schedule.scheduledJobs).map(name => {
       return {
+        name: schedule.scheduledJobs[name].name,
         cron: schedule.scheduledJobs[name].cron,
-        url: schedule.scheduledJobs[name].url
+        url: schedule.scheduledJobs[name].url,
+        nextInvocation: (schedule.scheduledJobs[name].nextInvocation() !== null ? schedule.scheduledJobs[name].nextInvocation().toString() : '')
       }
     })
     return Promise.resolve({ schedules })
   }
 
-  // async merge(schedules) {
-  //   if (schedules && Array.isArray(schedules)) {
-  //     let cronManager = new CronManager();
-  //     let configs = await cronManager.mergeCrons(schedules)
-  //     await this.delete();
-  //     await this.create(configs);
-  //     let result = await this.get();
-  //     // await this._write(result);
-  //     return Promise.resolve(result);
-  //   }
-  //   else {
-  //     console.log(`${new Date().toISOString()}\t`, 'Merge Fail: schedules is invalid')
-  //   }
-  // }
-
   async _read(path) {
 
     if (!fs.existsSync(path)) 
-      throw new Error('Schedule config not found');
+      throw new Error(`Schedule config (${path}) not found`);
 
     let data = await fs.readFileSync(path, 'utf8');
 
